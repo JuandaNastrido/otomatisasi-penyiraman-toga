@@ -3,12 +3,11 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   // Base URL untuk backend lokal (data sensor)
-  static const String baseUrl = 'http://10.242.162.1:3000';
+  static const String baseUrl = 'http://172.20.12.1:3000';
 
-  // Konfigurasi OpenWeatherMap
-  // Ganti 'YOUR_API_KEY' dengan API Key yang Anda dapatkan dari OpenWeatherMap
+  // Konfigurasi OpenWeatherMap menggunakan API Key Anda yang sudah aktif
   static const String weatherApiKey = '559fcb010ff79ecfc7ac3d4689f65814';
-  static const String city = 'Jakarta'; // Ganti dengan lokasi lahan Anda
+  static const String city = 'Jakarta';
   static const String weatherUrl = 'https://api.openweathermap.org/data/2.5';
 
   /// Mengambil data sensor dari backend lokal
@@ -24,37 +23,56 @@ class ApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
-        throw Exception('Gagal memuat data: ${response.statusCode}');
+        throw Exception('Gagal memuat data sensor: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Error: $e');
+      print('Sensor API Error: $e');
+      throw Exception('Error Sensor: $e');
     }
   }
 
   /// Mengambil data cuaca real-time dari OpenWeatherMap
   Future<Map<String, dynamic>> getWeatherData() async {
     try {
-      // 1. Ambil cuaca saat ini
+      // 1. Ambil cuaca saat ini (Current Weather)
       final weatherResponse = await http.get(
-        Uri.parse('$weatherUrl/weather?q=$city&appid=$weatherApiKey&units=metric&lang=id'),
+        Uri.parse('$weatherUrl/weather?q=$city,id&appid=$weatherApiKey&units=metric&lang=id'),
       );
 
-      // 2. Ambil prakiraan untuk mendapatkan probabilitas hujan (menggunakan endpoint forecast)
-      final forecastResponse = await http.get(
-        Uri.parse('$weatherUrl/forecast?q=$city&appid=$weatherApiKey&units=metric&cnt=8&lang=id'),
-      );
+      // 2. Ambil prakiraan cuaca (Forecast) untuk mendapatkan probabilitas hujan
+      double rainProb = 0.0;
+      try {
+        final forecastResponse = await http.get(
+          Uri.parse('$weatherUrl/forecast?q=$city,id&appid=$weatherApiKey&units=metric&cnt=8&lang=id'),
+        );
 
-      if (weatherResponse.statusCode == 200 && forecastResponse.statusCode == 200) {
-        final weatherData = json.decode(weatherResponse.body);
-        final forecastData = json.decode(forecastResponse.body);
-
-        // Ambil probabilitas hujan dari item forecast pertama (biasanya ada field 'pop' 0-1)
-        double rainProb = 0.0;
-        if (forecastData['list'] != null && forecastData['list'].isNotEmpty) {
-          rainProb = (forecastData['list'][0]['pop'] ?? 0.0) * 100;
+        if (forecastResponse.statusCode == 200) {
+          final forecastData = json.decode(forecastResponse.body);
+          if (forecastData['list'] != null && forecastData['list'].isNotEmpty) {
+            // Ambil field 'pop' (Probability of Precipitation) dari data terdekat (indeks 0) dan ubah ke persen
+            rainProb = (forecastData['list'][0]['pop'] ?? 0.0) * 100;
+          }
+        } else {
+          print('Forecast API returned status: ${forecastResponse.statusCode}');
         }
+      } catch (e) {
+        // Jika forecast error/limit, abaikan saja agar data cuaca utama tidak ikut gagal ter-load
+        print('Forecast API Error (Diabaikan agar tidak crash): $e');
+      }
 
-        // Mapping ke format yang digunakan di DashboardScreen
+      // 3. Validasi respon data cuaca utama
+      if (weatherResponse.statusCode == 200) {
+        final weatherData = json.decode(weatherResponse.body);
+
+        // Cetak log ke Debug Console Android Studio untuk memantau data masuk
+        print("=== DATA CUACA BERHASIL DIAMBIL ===");
+        print("Kota: ${weatherData['name']}");
+        print("Suhu: ${weatherData['main']['temp']}°C");
+        print("Kondisi: ${weatherData['weather'][0]['description']}");
+        print("Probabilitas Hujan: ${rainProb.toInt()}%");
+        print("===================================");
+
+        // Mapping data JSON ke Map yang siap dibaca oleh DashboardScreen
         return {
           'suhu': weatherData['main']['temp'],
           'kelembaban': weatherData['main']['humidity'],
@@ -63,22 +81,25 @@ class ApiService {
           'icon': weatherData['weather'][0]['icon'],
         };
       } else {
+        print('OpenWeatherMap Error Status: ${weatherResponse.statusCode}');
+        print('Respon Body: ${weatherResponse.body}');
         throw Exception('Gagal memuat cuaca dari OpenWeatherMap');
       }
     } catch (e) {
-      print('Weather API Error: $e');
-      // Fallback ke data lokal jika OpenWeatherMap gagal (opsional)
+      // Menangkap error jika terjadi kendala koneksi internet atau parsing gagal
+      print('Sistem Error pada getWeatherData(): $e');
       return _getFallbackWeatherData();
     }
   }
 
+  /// Data cadangan (fallback) jika koneksi ke OpenWeatherMap terputus
   Future<Map<String, dynamic>> _getFallbackWeatherData() async {
-    // Implementasi fallback jika API OpenWeatherMap bermasalah
     return {
       'suhu': 0,
       'kelembaban': 0,
-      'kondisi': 'Error Loading',
+      'kondisi': 'Koneksi Error',
       'prakiraan_hujan': 0,
+      'icon': '01d',
     };
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -9,8 +10,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final TextEditingController _plantController = TextEditingController();
+  String _humidityGroup = "Sedang";
+  
   String _modeOperasi = "Otomatis Penuh";
-  double _ambangKelembaban = 40;
   double _durasiPenyiraman = 5;
   double _cekUlang = 30;
 
@@ -26,6 +29,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _notifTanah = true;
 
   @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _plantController.text = prefs.getString('plant_name') ?? "Jahe Merah";
+      _humidityGroup = prefs.getString('humidity_group') ?? "Sedang";
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('plant_name', _plantController.text);
+    await prefs.setString('humidity_group', _humidityGroup);
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pengaturan berhasil disimpan')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _plantController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -37,6 +72,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
+                  _buildPlantInput(),
+                  const SizedBox(height: 20),
+                  _buildHumiditySelection(),
+                  const SizedBox(height: 20),
                   _buildModeOperasi(),
                   const SizedBox(height: 20),
                   _buildAturanPenyiraman(),
@@ -109,7 +148,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(
-                        fontSize: 24, // Diperkecil dari 28 ke 24 agar tidak wrapping
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                         height: 1.1,
@@ -132,8 +171,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text("Rabu, 22 April 2026", style: GoogleFonts.poppins(color: Colors.white, fontSize: 10)),
-                  Text("09:41 WIB", style: GoogleFonts.poppins(color: Colors.white, fontSize: 10)),
+                  Text("Aktif", style: GoogleFonts.poppins(color: Colors.white, fontSize: 10)),
+                  Text("Sistem Siaga", style: GoogleFonts.poppins(color: Colors.white, fontSize: 10)),
                 ],
               )
             ],
@@ -174,6 +213,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: children,
+      ),
+    );
+  }
+
+  Widget _buildPlantInput() {
+    return _buildCard([
+      _buildSectionTitle(Icons.eco_outlined, "Nama Tanaman"),
+      const SizedBox(height: 16),
+      TextField(
+        controller: _plantController,
+        decoration: InputDecoration(
+          hintText: "Masukkan nama tanaman...",
+          filled: true,
+          fillColor: Colors.grey[100],
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        style: GoogleFonts.poppins(fontSize: 14),
+      ),
+    ]);
+  }
+
+  Widget _buildHumiditySelection() {
+    return _buildCard([
+      _buildSectionTitle(Icons.water_drop_outlined, "Kelompok Kelembapan"),
+      const SizedBox(height: 16),
+      _buildHumidityOption("Tinggi", "70% – 90%"),
+      const SizedBox(height: 12),
+      _buildHumidityOption("Sedang", "50% – 70%"),
+      const SizedBox(height: 12),
+      _buildHumidityOption("Rendah", "30% – 50%"),
+    ]);
+  }
+
+  Widget _buildHumidityOption(String title, String range) {
+    bool isSelected = _humidityGroup == title;
+    return GestureDetector(
+      onTap: () => setState(() => _humidityGroup = title),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: isSelected ? Colors.green : Colors.grey[200]!),
+          borderRadius: BorderRadius.circular(12),
+          color: isSelected ? Colors.green[50]?.withOpacity(0.3) : Colors.transparent,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: isSelected ? Colors.green[700] : Colors.grey,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text(range, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600])),
+                ],
+              ),
+            )
+          ],
+        ),
       ),
     );
   }
@@ -226,10 +332,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildAturanPenyiraman() {
     return _buildCard([
-      _buildSectionTitle(Icons.water_drop_outlined, "Aturan Penyiraman"),
+      _buildSectionTitle(Icons.timer_outlined, "Interval Penyiraman"),
       const SizedBox(height: 20),
-      _buildSliderRow("Ambang batas kelembaban", _ambangKelembaban, 0, 100, "%", (v) => setState(() => _ambangKelembaban = v)),
-      const SizedBox(height: 16),
       _buildSliderRow("Durasi penyiraman", _durasiPenyiraman, 1, 60, " menit", (v) => setState(() => _durasiPenyiraman = v)),
       const SizedBox(height: 16),
       _buildSliderRow("Cek ulang setelah siram", _cekUlang, 5, 120, " menit", (v) => setState(() => _cekUlang = v)),
@@ -348,7 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           width: double.infinity,
           height: 50,
           child: ElevatedButton(
-            onPressed: () {},
+            onPressed: _saveSettings,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2E7D32),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

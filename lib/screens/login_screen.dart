@@ -122,7 +122,9 @@ class LoginScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     TextButton(
-                      onPressed: () {},
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/forgot-password');
+                      },
                       child: Text(
                         "Lupa Password ?",
                         style: GoogleFonts.poppins(

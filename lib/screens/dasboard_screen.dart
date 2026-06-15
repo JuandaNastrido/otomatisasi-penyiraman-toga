@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_services.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -17,18 +18,101 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String statusKoneksi = "Online";
   String tanaman = "Jahe Merah";
-  String namaIlmiah = "Ziniger officinale";
-  String tanggal = "Rabu, 22 April 2026";
-  String jam = "09:41 WIB";
-  String cuaca = "CERAH";
-  String kelembapanUdara = "75%";
-  String suhu = "28°C";
-  String prakiraanHujan = "20%";
+  String humidityGroup = "Sedang";
+  String humidityRangeText = "50% - 70%";
+  String tanggal = "Memuat...";
+  String jam = "--:-- WIB";
+  String cuaca = "LOADING...";
+  String kelembapanUdara = "0%";
+  String suhu = "0°C";
+  String prakiraanHujan = "0%";
 
-  String kelembabanTanah = "65%";
-  String kondisiTanah = "Normal";
+  String kelembabanTanah = "0%";
+  String kondisiTanah = "Memuat...";
   String statusPompa = "Mati";
   String durasiPompa = "0s";
+  String sensorId = "-";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    try {
+      await initializeDateFormatting('id', null);
+      
+      // Load user settings
+      final prefs = await SharedPreferences.getInstance();
+      tanaman = prefs.getString('plant_name') ?? "Jahe Merah";
+      humidityGroup = prefs.getString('humidity_group') ?? "Sedang";
+      
+      if (humidityGroup == "Tinggi") {
+        humidityRangeText = "70% - 90%";
+      } else if (humidityGroup == "Sedang") {
+        humidityRangeText = "50% - 70%";
+      } else {
+        humidityRangeText = "30% - 50%";
+      }
+
+      final List<dynamic> rawSensorData = await _apiService.getSensorData();
+      final Map<String, dynamic> weatherData = await _apiService.getWeatherData();
+
+      if (!mounted) return;
+
+      setState(() {
+        Map<String, dynamic> sensorData = {};
+        if (rawSensorData.isNotEmpty) {
+          sensorData = Map<String, dynamic>.from(rawSensorData[0]);
+        }
+
+        sensorId = _toString(sensorData['sensor_id']);
+        statusKoneksi = sensorId.isNotEmpty ? "Online ($sensorId)" : "Online";
+
+        var moistureValue = sensorData['moisture_percent'];
+        if (moistureValue != null) {
+          kelembabanTanah = "${_toInt(moistureValue)}%";
+        }
+
+        kondisiTanah = _toString(sensorData['soil_condition']);
+        if (kondisiTanah.isEmpty) kondisiTanah = "Normal";
+
+        statusPompa = _toString(sensorData['action']);
+        if (statusPompa.isEmpty) statusPompa = "Mati";
+
+        durasiPompa = "${_toInt(sensorData['pump_duration'])}s";
+
+        var tsValue = sensorData['created_at'];
+        if (tsValue != null) {
+          try {
+            // 1. Parse string ke DateTime, lalu paksa konversi ke waktu lokal HP (.toLocal())
+            DateTime dt = DateTime.parse(tsValue.toString()).toLocal();
+
+            // 2. Format tanggal dan jam akan otomatis mengikuti zona waktu lokal (WIB/WITA/WIT)
+            tanggal = DateFormat('EEEE, d MMMM yyyy', 'id').format(dt);
+            jam = DateFormat('HH:mm').format(dt) + " WIB";
+          } catch (e) {
+            print("Error parsing created_at: $e");
+          }
+        }
+
+        if (weatherData.isNotEmpty) {
+          kelembapanUdara = "${_toInt(weatherData['kelembaban'])}%";
+          suhu = "${_toInt(weatherData['suhu'])}°C";
+          var kondisiValue = weatherData['kondisi'];
+          cuaca = _toString(kondisiValue).toUpperCase();
+          if (cuaca.isEmpty) cuaca = "TIDAK DIKETAHUI";
+          prakiraanHujan = "${_toInt(weatherData['prakiraan_hujan'])}%";
+        }
+
+        isLoading = false;
+      });
+    } catch (e) {
+      print("Terjadi kesalahan di Dashboard_fetchData: $e");
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
 
   int _toInt(dynamic value) {
     if (value == null) return 0;
@@ -47,72 +131,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return value.toString();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchData();
-  }
-
-  Future<void> _fetchData() async {
-    try {
-      await initializeDateFormatting('id', null);
-      final List<dynamic> rawSensorData = await _apiService.getSensorData();
-      final dynamic rawWeatherData = await _apiService.getWeatherData();
-      if (!mounted) return;
-      setState(() {
-        Map<String, dynamic> sensorData = {};
-        if (rawSensorData.isNotEmpty) sensorData = Map<String, dynamic>.from(rawSensorData[0]);
-        Map<String, dynamic> weatherData = {};
-        if (rawWeatherData is List && rawWeatherData.isNotEmpty) {
-          weatherData = Map<String, dynamic>.from(rawWeatherData[0]);
-        } else if (rawWeatherData is Map) {
-          weatherData = Map<String, dynamic>.from(rawWeatherData);
-        }
-        var moistureValue = sensorData['moisture_percent'] ?? sensorData['moisture'];
-        if (moistureValue != null) kelembabanTanah = "${_toInt(moistureValue)}%";
-        kondisiTanah = _toString(sensorData['soil_condition']);
-        if (kondisiTanah.isEmpty) kondisiTanah = "Normal";
-        statusPompa = _toString(sensorData['action']);
-        if (statusPompa.isEmpty) statusPompa = "Idle";
-        durasiPompa = "${_toInt(sensorData['pump_duration'])}s";
-        var tsValue = sensorData['timestamp'];
-        if (tsValue != null) {
-          try {
-            int timestampInt = _toInt(tsValue);
-            if (timestampInt > 0) {
-              DateTime dt = DateTime.fromMillisecondsSinceEpoch(timestampInt);
-              tanggal = DateFormat('EEEE, d MMMM yyyy', 'id').format(dt);
-              jam = DateFormat('HH:mm').format(dt) + " WIB";
-            }
-          } catch (e) {}
-        }
-        if (weatherData.isNotEmpty) {
-          kelembapanUdara = "${_toInt(weatherData['kelembaban'])}%";
-          suhu = "${_toInt(weatherData['suhu'])}°C";
-          var kondisiValue = weatherData['kondisi'];
-          cuaca = _toString(kondisiValue).toUpperCase();
-          if (cuaca.isEmpty) cuaca = "CERAH";
-          prakiraanHujan = "${_toInt(weatherData['prakiraan_hujan'])}%";
-        }
-        isLoading = false;
-      });
-    } catch (e) {
-      if (mounted) setState(() => isLoading = false);
-    }
-  }
-
   double _parsePercent(String text) => (double.tryParse(text.replaceAll('%', '')) ?? 0) / 100;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2E7D32)))
+          : Column(
         children: [
           _buildFixedHeader(context),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _fetchData,
+              color: const Color(0xFF2E7D32),
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -188,7 +221,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white, height: 1.1),
                     ),
                     Text(
-                      namaIlmiah,
+                      "Kelompok Kelembaban: $humidityGroup",
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70),
@@ -223,25 +256,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.wb_sunny_outlined, color: Colors.yellow, size: 40),
+              const Icon(Icons.cloud_queue_outlined, color: Colors.white, size: 40),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(cuaca, style: GoogleFonts.poppins(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                    Text(cuaca, style: GoogleFonts.poppins(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                     Text("Kelembapan udara: $kelembapanUdara", style: GoogleFonts.poppins(color: Colors.white, fontSize: 12)),
                   ],
                 ),
               ),
-              Text(suhu, style: GoogleFonts.poppins(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold)),
+              Text(suhu, style: GoogleFonts.poppins(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Prakiraan hujan:", style: GoogleFonts.poppins(color: Colors.white, fontSize: 13)),
+              Text("Prakiraan potensi hujan hari ini:", style: GoogleFonts.poppins(color: Colors.white, fontSize: 13)),
               Text(prakiraanHujan, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
             ],
           ),
@@ -250,18 +283,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             borderRadius: BorderRadius.circular(10),
             child: LinearProgressIndicator(value: _parsePercent(prakiraanHujan), backgroundColor: Colors.white.withOpacity(0.3), color: Colors.white, minHeight: 8),
           ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline, color: Colors.white, size: 20),
-                const SizedBox(width: 10),
-                Expanded(child: Text("Info: Potensi hujan sore hari\n\"Sistem akan tunda otomatis jika hujan turun\"", style: GoogleFonts.poppins(color: Colors.white, fontSize: 11))),
-              ],
-            ),
-          )
         ],
       ),
     );
@@ -276,7 +297,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           const Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Icon(Icons.eco_outlined, color: Colors.green, size: 40), Icon(Icons.signal_cellular_alt, color: Colors.green, size: 24)]),
           const SizedBox(height: 16),
-          Text("KELEMBABAN SAAT INI", style: GoogleFonts.poppins(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
+          Text("KELEMBABAN TANAH SAAT INI", style: GoogleFonts.poppins(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
           Text(kelembabanTanah, style: GoogleFonts.poppins(fontSize: 48, fontWeight: FontWeight.bold, height: 1.2)),
           const SizedBox(height: 10),
           ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: _parsePercent(kelembabanTanah), backgroundColor: Colors.grey[200], color: Colors.green[700], minHeight: 12)),
@@ -294,19 +315,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]),
       child: Column(
         children: [
-          _buildDetailRow("Ambang batas:", "<40% akan menyiraman", isBoldValue: true),
+          _buildDetailRow("Ambang batas ($humidityGroup):", humidityRangeText, isBoldValue: true),
           const SizedBox(height: 16),
-          _buildBatteryRow("Baterai sensor:", 0.85),
+          _buildDetailRow("Status Pompa Terkini:", statusPompa, isBoldValue: true),
           const SizedBox(height: 16),
-          _buildDetailRow("Terakhir baca:", "2 menit lalu", isBoldValue: true),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("ID Sensor:", style: GoogleFonts.poppins(color: Colors.grey[700], fontSize: 14)),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4)), child: Text("SNS-001", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12))),
-            ],
-          )
+          _buildDetailRow("Durasi Aktif Pompa:", durasiPompa, isBoldValue: true),
         ],
       ),
     );
@@ -328,7 +341,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text("Sistem Penyiraman Otomatis", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15)),
-                  Row(children: [Text("STATUS: ", style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey)), Text("SIAP", style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)), const SizedBox(width: 4), const Icon(Icons.check_circle, color: Colors.green, size: 12)]),
+                  Row(children: [Text("STATUS POMPA: ", style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey)), Text(statusPompa.toUpperCase(), style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: statusPompa.toLowerCase() == 'menyiram' ? Colors.blue : Colors.green)), const SizedBox(width: 4), const Icon(Icons.check_circle, color: Colors.green, size: 12)]),
                 ],
               )
             ],
@@ -338,18 +351,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(12)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Aturan aktif:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.green[800])), const SizedBox(height: 4), Text("\"Jika tanah <40%, siram selama 5 menit\"", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green[900]))]),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Aturan aktif:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.green[800])), const SizedBox(height: 4), Text("\"Jika kelembaban tanah berada di bawah ambang batas $humidityGroup ($humidityRangeText), pompa akan aktif.\"", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green[900]))]),
           ),
-          const SizedBox(height: 20),
-          Text("Riwayat penyiraman terakhir:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600])),
-          const SizedBox(height: 10),
-          _buildHistoryItem("Kemarin 16:30", "Berhasil (0.8L)"),
-          const SizedBox(height: 8),
-          _buildHistoryItem("2 hari lalu 08:15", "Berhasil (0.8L)"),
           const SizedBox(height: 24),
           SizedBox(width: double.infinity, height: 50, child: ElevatedButton(onPressed: () {}, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: Text("Siram Manual Sekarang", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)))),
-          const SizedBox(height: 12),
-          SizedBox(width: double.infinity, height: 50, child: OutlinedButton(onPressed: () {}, style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.orange), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.pause, color: Colors.orange, size: 20), const SizedBox(width: 8), Text("Pause Otomatis Sementara", style: GoogleFonts.poppins(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 14))]))),
         ],
       ),
     );
@@ -363,17 +368,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [const Icon(Icons.cloud_outlined, color: Colors.blue, size: 24), const SizedBox(width: 10), Text("Integrasi Cuaca", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.blue[900], fontSize: 16))]),
+          Row(children: [const Icon(Icons.cloud_outlined, color: Colors.blue, size: 24), const SizedBox(width: 10), Text("Integrasi Cuaca Intelijen", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.blue[900], fontSize: 16))]),
           const SizedBox(height: 16),
-          _buildCheckItem("Jika hujan turun – penyiraman TUNDA"),
-          _buildCheckItem("Jika tanah kering & cuaca cerah – SIRAM"),
-          _buildCheckItem("Cek cuaca setiap 30 menit"),
+          _buildCheckItem("Jika hujan turun – penyiraman OTOMATIS TUNDA"),
+          _buildCheckItem("Jika tanah kering & cuaca cerah – BERSIAP SIRAM"),
           const SizedBox(height: 20),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(12)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Status saat ini:", style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue[800])), const SizedBox(height: 4), Text("\"Tanah 65% (normal), cuaca cerah, tidak perlu penyiraman\"", style: GoogleFonts.poppins(fontSize: 12, color: Colors.blue[900]))]),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Status Keputusan:", style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue[800])), const SizedBox(height: 4), Text("\"Kondisi cuaca saat ini adalah $cuaca dengan kelembaban tanah $kelembabanTanah.\"", style: GoogleFonts.poppins(fontSize: 12, color: Colors.blue[900]))]),
           )
         ],
       ),
@@ -382,14 +386,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildDetailRow(String label, String value, {bool isBoldValue = false}) {
     return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: GoogleFonts.poppins(color: Colors.grey[700], fontSize: 14)), Text(value, style: GoogleFonts.poppins(fontSize: 14, fontWeight: isBoldValue ? FontWeight.bold : FontWeight.normal))]);
-  }
-
-  Widget _buildBatteryRow(String label, double percent) {
-    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: GoogleFonts.poppins(color: Colors.grey[700], fontSize: 14)), Row(children: [SizedBox(width: 80, height: 10, child: ClipRRect(borderRadius: BorderRadius.circular(5), child: LinearProgressIndicator(value: percent, backgroundColor: Colors.grey[200], valueColor: AlwaysStoppedAnimation<Color>(Colors.green[400]!)))), const SizedBox(width: 10), Text("${(percent * 100).toInt()}%", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14))])]);
-  }
-
-  Widget _buildHistoryItem(String time, String status) {
-    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("• $time", style: GoogleFonts.poppins(fontSize: 13, color: Colors.black87)), Text(status, style: GoogleFonts.poppins(fontSize: 13, color: Colors.green[700], fontWeight: FontWeight.w600))]);
   }
 
   Widget _buildCheckItem(String text) {

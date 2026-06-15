@@ -4,6 +4,7 @@ import 'package:toga/screens/splash_screen.dart';
 import 'package:toga/screens/login_screen.dart';
 import 'package:toga/screens/register_screen.dart';
 import 'package:toga/screens/main_screen.dart';
+import 'package:toga/screens/forgot_password_screen.dart';
 
 void main(){
   runApp(const MyApp());
@@ -25,6 +26,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
+        '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/home': (context) => const MainScreen(),
       },
       debugShowCheckedModeBanner: false,
