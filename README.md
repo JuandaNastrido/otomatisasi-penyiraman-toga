@@ -264,9 +264,7 @@ For issues or questions:
 
 ## 📄 License
 
-## 📄 License
-
-Proyek ini dilisensikan di bawah [MIT License](LICENSE) - lihat berkas [LICENSE](LICENSE) untuk detail lebih lanjut.
+Proyek ini dilisensikan di bawah [MIT License](LICENSE)
 
 ---
 
