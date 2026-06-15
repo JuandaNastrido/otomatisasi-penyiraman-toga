@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
@@ -6,7 +7,7 @@ class ApiService {
   static const String baseUrl = 'http://172.20.12.1:3000';
 
   // Konfigurasi OpenWeatherMap menggunakan API Key Anda yang sudah aktif
-  static const String weatherApiKey = '559fcb010ff79ecfc7ac3d4689f65814';
+  final String weatherApiKey = dotenv.env['OPENWEATHER_API_KEY'] ?? '';
   static const String city = 'Jakarta';
   static const String weatherUrl = 'https://api.openweathermap.org/data/2.5';
 

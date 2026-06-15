@@ -1,0 +1,104 @@
+write_file(
+    absolutePath='C:/Users/juand/StudioProjects/Toga/lib/services/api_services.dart',
+    text='''import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+
+class ApiService {
+  // Base URL untuk backend lokal (data sensor)
+  // Pastikan alamat IP ini benar dan server lokal sedang berjalan
+  static const String baseUrl = 'http://192.168.1.30:3000';
+
+  // Konfigurasi OpenWeatherMap
+  static const String weatherApiKey = '559fcb010ff79ecfc7ac3d4689f65814';
+  static const String city = 'Padang,id'; 
+  static const String weatherUrl = 'https://api.openweathermap.org/data/2.5';
+
+  /// Mengambil data sensor dari backend lokal
+  Future<List<dynamic>> getSensorData() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/data'),
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        debugPrint('Sensor API Error: Status \${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      debugPrint('Sensor API Exception: \$e');
+      return [];
+    }
+  }
+
+  /// Mengambil data cuaca real-time dari OpenWeatherMap
+  Future<Map<String, dynamic>> getWeatherData() async {
+    Map<String, dynamic> weatherResult = {
+      'suhu': 0,
+      'kelembaban': 0,
+      'kondisi': 'Memuat...',
+      'prakiraan_hujan': 0,
+    };
+
+    try {
+      // 1. Ambil Data Cuaca Sekarang (Main Request)
+      try {
+        final weatherResponse = await http.get(
+          Uri.parse('\$weatherUrl/weather?q=\$city&appid=\$weatherApiKey&units=metric&lang=id'),
+        ).timeout(const Duration(seconds: 5));
+
+        if (weatherResponse.statusCode == 200) {
+          final weatherData = json.decode(weatherResponse.body);
+          weatherResult['suhu'] = weatherData['main']?['temp'] ?? 0;
+          weatherResult['kelembaban'] = weatherData['main']?['humidity'] ?? 0;
+          if (weatherData['weather'] != null && weatherData['weather'].isNotEmpty) {
+            weatherResult['kondisi'] = weatherData['weather'][0]['description'] ?? 'Cerah';
+          }
+        } else {
+          debugPrint('Weather API Error: \${weatherResponse.statusCode}');
+          weatherResult['kondisi'] = 'Gagal memuat cuaca';
+        }
+      } catch (e) {
+        debugPrint('Weather Request Exception: \$e');
+        weatherResult['kondisi'] = 'Koneksi Gagal';
+      }
+
+      // 2. Ambil Data Forecast secara terpisah agar tidak mengganggu data utama jika gagal
+      try {
+        final forecastResponse = await http.get(
+          Uri.parse('\$weatherUrl/forecast?q=\$city&appid=\$weatherApiKey&units=metric&cnt=8&lang=id'),
+        ).timeout(const Duration(seconds: 5));
+
+        if (forecastResponse.statusCode == 200) {
+          final forecastData = json.decode(forecastResponse.body);
+          if (forecastData['list'] != null && forecastData['list'].isNotEmpty) {
+            // pop (probability of precipitation) biasanya ada di data forecast
+            double rainProb = (forecastData['list'][0]['pop']?.toDouble() ?? 0.0) * 100;
+            weatherResult['prakiraan_hujan'] = rainProb.toInt();
+          }
+        }
+      } catch (e) {
+        debugPrint('Forecast Request Exception: \$e');
+        // Kita abaikan jika forecast gagal agar user tetap bisa melihat suhu saat ini
+      }
+
+      return weatherResult;
+    } catch (e) {
+      debugPrint('General Weather Processing Error: \$e');
+      return _getFallbackWeatherData('Error System');
+    }
+  }
+
+  Future<Map<String, dynamic>> _getFallbackWeatherData(String status) async {
+    return {
+      'suhu': 0,
+      'kelembaban': 0,
+      'kondisi': status,
+      'prakiraan_hujan': 0,
+    };
+  }
+}
+'''
+)
