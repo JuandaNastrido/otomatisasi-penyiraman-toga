@@ -1,6 +1,7 @@
+// C:/Users/juand/StudioProjects/Toga/lib/screens/history_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import '../services/api_services.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -13,7 +14,8 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   final ApiService _apiService = ApiService();
   bool isLoading = true;
-  List<dynamic> historyData = [];
+  List<dynamic> devices = [];
+  String userEmail = "decalyps@gmail.com";
 
   @override
   void initState() {
@@ -22,10 +24,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _fetchHistory() async {
+    setState(() => isLoading = true);
     try {
-      final data = await _apiService.getSensorData();
+      // Kita ambil limit yang lebih besar dari API agar bisa kita filter di UI
+      // Misal limit 50 untuk memastikan kita punya cukup data untuk difilter
+      final data = await _apiService.getSensorHistory(userEmail, limit: 50);
       setState(() {
-        historyData = data;
+        devices = data['devices'] ?? [];
         isLoading = false;
       });
     } catch (e) {
@@ -40,46 +45,125 @@ class _HistoryScreenState extends State<HistoryScreen> {
       backgroundColor: const Color(0xFFF8F9FA),
       body: Column(
         children: [
-          _buildFixedHeader(context),
+          _buildHeader(),
           Expanded(
             child: isLoading
                 ? const Center(child: CircularProgressIndicator(color: Color(0xFF2E7D32)))
                 : RefreshIndicator(
-                    onRefresh: _fetchHistory,
-                    color: const Color(0xFF2E7D32),
-                    child: ListView(
-                      padding: const EdgeInsets.all(20),
-                      children: [
-                        _buildStatsGrid(),
-                        const SizedBox(height: 25),
-                        Text(
-                          "Log Aktivitas Perangkat",
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 15),
-                        if (historyData.isEmpty)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20.0),
-                              child: Text("Tidak ada data riwayat", style: GoogleFonts.poppins(color: Colors.grey)),
-                            ),
-                          )
-                        else
-                          ...historyData.map((item) => _buildHistoryItem(item)).toList(),
-                        const SizedBox(height: 20),
-                      ],
+              onRefresh: _fetchHistory,
+              color: const Color(0xFF2E7D32),
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Text(
+                    "Riwayat Perangkat",
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 15),
+                  if (devices.isEmpty)
+                    _buildEmptyState()
+                  else
+                    ...devices.map((device) => _buildDeviceHistoryCard(device)).toList(),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFixedHeader(BuildContext context) {
+  Widget _buildDeviceHistoryCard(dynamic device) {
+    String address = device['address'] ?? "Unknown";
+    List pots = device['pots'] ?? [];
+
+    // LOGIKA FILTER: Maksimal 5 riwayat per potIndex
+    Map<int, List<dynamic>> filteredPots = {};
+    for (var pot in pots) {
+      int idx = pot['potIndex'];
+      if (!filteredPots.containsKey(idx)) {
+        filteredPots[idx] = [];
+      }
+      if (filteredPots[idx]!.length < 5) { // Batasi maksimal 5
+        filteredPots[idx]!.add(pot);
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 25),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.router, color: Color(0xFF2E7D32), size: 20),
+              const SizedBox(width: 8),
+              Text("MAC: $address", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const Divider(height: 30),
+
+          // Tampilkan riwayat untuk Pot 1, 2, dan 3
+          _buildPotHistorySection(1, filteredPots[1] ?? []),
+          const SizedBox(height: 15),
+          _buildPotHistorySection(2, filteredPots[2] ?? []),
+          const SizedBox(height: 15),
+          _buildPotHistorySection(3, filteredPots[3] ?? []),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPotHistorySection(int potIndex, List<dynamic> history) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("Pot $potIndex (Max 5 Riwayat)",
+            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700])),
+        const SizedBox(height: 8),
+        if (history.isEmpty)
+          Text("Tidak ada riwayat", style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey))
+        else
+          ...history.map((item) => Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("${item['moisturePercent']}% - ${item['soilCondition']}",
+                        style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600)),
+                    Text(item['timestampSensor'] ?? "-",
+                        style: GoogleFonts.poppins(fontSize: 9, color: Colors.grey)),
+                  ],
+                ),
+                Text(item['action'] ?? "-",
+                    style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold,
+                        color: (item['action'] ?? "").toString().contains("ON") ? Colors.blue : Colors.grey)),
+              ],
+            ),
+          )).toList(),
+      ],
+    );
+  }
+
+  Widget _buildHeader() {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 10, 20, 20),
@@ -93,200 +177,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Riwayat Sistem",
-                style: GoogleFonts.poppins(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text("Live Data", style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-              )
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(
-            "Data Aktivitas Terakhir dari Sensor",
-            style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70),
-          ),
+          Text("Riwayat Sensor", style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+          Text("Menampilkan 5 data terakhir per pot", style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70)),
         ],
       ),
     );
   }
 
-  Widget _buildStatsGrid() {
-    // Data di sini masih dummy karena API tidak memberikan agregasi langsung
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  color: const Color(0xFFE3F2FD),
-                  icon: Icons.water_drop_outlined,
-                  iconColor: Colors.blue,
-                  value: "${historyData.where((e) => e['action'].toString().toLowerCase().contains('siram') || e['action'].toString().toLowerCase().contains('on')).length}x",
-                  label: "Penyiraman (Log)",
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildStatCard(
-                  color: const Color(0xFFE8F5E9),
-                  icon: Icons.bar_chart,
-                  iconColor: Colors.green,
-                  value: historyData.isNotEmpty ? "${_calculateAverageMoisture()}%" : "0%",
-                  label: "Rata-rata kelembapan",
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  int _calculateAverageMoisture() {
-    if (historyData.isEmpty) return 0;
-    double total = 0;
-    for (var item in historyData) {
-      total += double.tryParse(item['moisture_percent'].toString()) ?? 0;
-    }
-    return (total / historyData.length).round();
-  }
-
-  Widget _buildStatCard({
-    required Color color,
-    required IconData icon,
-    required Color iconColor,
-    required String value,
-    required String label,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: iconColor, size: 32),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(
-              fontSize: 10,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHistoryItem(dynamic item) {
-    String action = item['action']?.toString() ?? "N/A";
-    bool isWatering = action.toLowerCase().contains('siram') || action.toLowerCase().contains('on');
-    
-    DateTime dt;
-    try {
-      dt = DateTime.parse(item['created_at'].toString());
-    } catch (_) {
-      dt = DateTime.now();
-    }
-    
-    String formattedTime = DateFormat('dd MMM, HH:mm').format(dt);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.grey[100]!),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: isWatering ? Colors.blue[50] : Colors.green[50],
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isWatering ? Icons.water_drop : Icons.eco,
-              color: isWatering ? Colors.blue : Colors.green,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item['soil_condition'] ?? "Kondisi Normal",
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                Text(
-                  "Kelembapan: ${item['moisture_percent']}% | Sensor: ${item['sensor_value']}",
-                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                formattedTime,
-                style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500),
-              ),
-              Text(
-                action,
-                style: GoogleFonts.poppins(
-                  fontSize: 11, 
-                  color: isWatering ? Colors.blue : Colors.green,
-                  fontWeight: FontWeight.bold
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+  Widget _buildEmptyState() {
+    return Center(child: Text("Tidak ada riwayat ditemukan", style: GoogleFonts.poppins(color: Colors.grey)));
   }
 }

@@ -3,15 +3,138 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Base URL untuk backend lokal (data sensor)
-  static const String baseUrl = 'http://172.20.12.1:3000';
+  // Base URL untuk backend lokal (data sensor utama)
+  static const String baseUrl = 'http://193.168.1.34:8082';
+  
+  // Base URL untuk riwayat data sensor
+  static const String historyBaseUrl = 'http://192.168.1.24:8082';
+
+  // Base URL untuk layanan otentikasi (Security Service)
+  // Menggunakan IP 172.20.12.1 agar bisa diakses dari emulator/device Android
+  static const String authBaseUrl = 'http://192.168.1.24:8084';
 
   // Konfigurasi OpenWeatherMap menggunakan API Key Anda yang sudah aktif
   final String weatherApiKey = dotenv.env['OPENWEATHER_API_KEY'] ?? '';
-  static const String city = 'Jakarta';
+  static const String city = 'Bandung';
   static const String weatherUrl = 'https://api.openweathermap.org/data/2.5';
 
-  /// Mengambil data sensor dari backend lokal
+  /// Registrasi user baru ke security-service
+  Future<Map<String, dynamic>> register(String email, String password) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$authBaseUrl/auth/register'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'email': email,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body);
+      } else {
+        // Coba ambil pesan error jika ada
+        try {
+          final errorData = json.decode(response.body);
+          throw Exception(errorData['message'] ?? 'Gagal registrasi: ${response.statusCode}');
+        } catch (_) {
+          throw Exception('Gagal registrasi: ${response.statusCode}');
+        }
+      }
+    } catch (e) {
+      print('Register API Error: $e');
+      throw Exception('Error Register: $e');
+    }
+  }
+
+  /// Login user ke security-service
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$authBaseUrl/auth/login'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'email': email,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        try {
+          final errorData = json.decode(response.body);
+          throw Exception(errorData['message'] ?? 'Gagal login: ${response.statusCode}');
+        } catch (_) {
+          throw Exception('Gagal login: ${response.statusCode}');
+        }
+      }
+    } catch (e) {
+      print('Login API Error: $e');
+      throw Exception('Error Login: $e');
+    }
+  }
+
+  /// Validasi token
+  Future<bool> validateToken(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$authBaseUrl/auth/validate?token=$token'),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Validate Token Error: $e');
+      return false;
+    }
+  }
+
+  /// Mengambil data sensor terbaru dari server baru (Port 8082)
+  Future<Map<String, dynamic>> getLatestSensorData(String email) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$historyBaseUrl/api/sensor-data/latest/$email'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Gagal memuat data sensor terbaru: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Latest Sensor API Error: $e');
+      throw Exception('Error Latest Sensor: $e');
+    }
+  }
+
+  /// Mengambil riwayat data sensor dari server baru (Port 8082)
+  Future<Map<String, dynamic>> getSensorHistory(String email, {int limit = 5}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$historyBaseUrl/api/sensor-data/history/$email?limit=$limit'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Gagal memuat riwayat sensor: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('History API Error: $e');
+      throw Exception('Error History: $e');
+    }
+  }
+
+  /// Mengambil data sensor dari backend lokal (Port 8082)
   Future<List<dynamic>> getSensorData() async {
     try {
       final response = await http.get(
@@ -35,12 +158,10 @@ class ApiService {
   /// Mengambil data cuaca real-time dari OpenWeatherMap
   Future<Map<String, dynamic>> getWeatherData() async {
     try {
-      // 1. Ambil cuaca saat ini (Current Weather)
       final weatherResponse = await http.get(
         Uri.parse('$weatherUrl/weather?q=$city,id&appid=$weatherApiKey&units=metric&lang=id'),
       );
 
-      // 2. Ambil prakiraan cuaca (Forecast) untuk mendapatkan probabilitas hujan
       double rainProb = 0.0;
       try {
         final forecastResponse = await http.get(
@@ -50,30 +171,15 @@ class ApiService {
         if (forecastResponse.statusCode == 200) {
           final forecastData = json.decode(forecastResponse.body);
           if (forecastData['list'] != null && forecastData['list'].isNotEmpty) {
-            // Ambil field 'pop' (Probability of Precipitation) dari data terdekat (indeks 0) dan ubah ke persen
             rainProb = (forecastData['list'][0]['pop'] ?? 0.0) * 100;
           }
-        } else {
-          print('Forecast API returned status: ${forecastResponse.statusCode}');
         }
       } catch (e) {
-        // Jika forecast error/limit, abaikan saja agar data cuaca utama tidak ikut gagal ter-load
-        print('Forecast API Error (Diabaikan agar tidak crash): $e');
+        print('Forecast API Error: $e');
       }
 
-      // 3. Validasi respon data cuaca utama
       if (weatherResponse.statusCode == 200) {
         final weatherData = json.decode(weatherResponse.body);
-
-        // Cetak log ke Debug Console Android Studio untuk memantau data masuk
-        print("=== DATA CUACA BERHASIL DIAMBIL ===");
-        print("Kota: ${weatherData['name']}");
-        print("Suhu: ${weatherData['main']['temp']}°C");
-        print("Kondisi: ${weatherData['weather'][0]['description']}");
-        print("Probabilitas Hujan: ${rainProb.toInt()}%");
-        print("===================================");
-
-        // Mapping data JSON ke Map yang siap dibaca oleh DashboardScreen
         return {
           'suhu': weatherData['main']['temp'],
           'kelembaban': weatherData['main']['humidity'],
@@ -82,12 +188,9 @@ class ApiService {
           'icon': weatherData['weather'][0]['icon'],
         };
       } else {
-        print('OpenWeatherMap Error Status: ${weatherResponse.statusCode}');
-        print('Respon Body: ${weatherResponse.body}');
-        throw Exception('Gagal memuat cuaca dari OpenWeatherMap');
+        throw Exception('Gagal memuat cuaca');
       }
     } catch (e) {
-      // Menangkap error jika terjadi kendala koneksi internet atau parsing gagal
       print('Sistem Error pada getWeatherData(): $e');
       return _getFallbackWeatherData();
     }
