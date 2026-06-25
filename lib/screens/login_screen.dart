@@ -1,8 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/api_services.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final ApiService _apiService = ApiService();
+  bool _isLoading = false;
+
+  Future<void> _handleLogin() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Email dan Password harus diisi")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await _apiService.login(_emailController.text, _passwordController.text);
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -14,11 +50,9 @@ class LoginScreen extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 80),
-              // Logo and App Name
               Center(
                 child: Column(
                   children: [
-                    // Menggunakan Logo Toga
                     Image.asset(
                       'assets/logo.png',
                       height: 120,
@@ -36,16 +70,12 @@ class LoginScreen extends StatelessWidget {
                     ),
                     Text(
                       "Smart Watering System",
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.white70,
-                      ),
+                      style: GoogleFonts.poppins(fontSize: 14, color: Colors.white70),
                     ),
                   ],
                 ),
               ),
               const Spacer(),
-              // Login Card
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
@@ -59,37 +89,20 @@ class LoginScreen extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.green[50],
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.lock_outline, color: Color(0xFF2E7D32), size: 30),
-                    ),
-                    const SizedBox(height: 10),
                     Text(
                       "Login",
-                      style: GoogleFonts.poppins(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      "Masukkan Kredensial Anda",
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
+                      style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 30),
                     _buildTextField(
-                      label: "Username",
-                      hint: "Masukkan Username",
-                      icon: Icons.person_outline,
+                      controller: _emailController,
+                      label: "Email",
+                      hint: "Masukkan Email",
+                      icon: Icons.email_outlined,
                     ),
                     const SizedBox(height: 20),
                     _buildTextField(
+                      controller: _passwordController,
                       label: "Password",
                       hint: "Masukkan Password",
                       icon: Icons.lock_outline,
@@ -100,62 +113,40 @@ class LoginScreen extends StatelessWidget {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pushReplacementNamed(context, '/home');
-                        },
+                        onPressed: _isLoading ? null : _handleLogin,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF2E7D32),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                         ),
-                        child: Text(
-                          "Masuk",
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
+                        child: _isLoading
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : Text(
+                                "Masuk",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
                       ),
                     ),
-                    const SizedBox(height: 10),
                     TextButton(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/forgot-password');
-                      },
-                      child: Text(
-                        "Lupa Password ?",
-                        style: GoogleFonts.poppins(
-                          color: Colors.blue,
-                          fontSize: 12,
-                        ),
-                      ),
+                      onPressed: () => Navigator.pushNamed(context, '/forgot-password'),
+                      child: Text("Lupa Password ?", style: GoogleFonts.poppins(color: Colors.blue, fontSize: 12)),
                     ),
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          "Belum punya akun ? ",
-                          style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
-                        ),
+                        Text("Belum punya akun ? ", style: GoogleFonts.poppins(fontSize: 12)),
                         GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            // Menghubungkan ke halaman pendaftaran
-                            Navigator.pushNamed(context, '/register');
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
-                            child: Text(
-                              "Daftar di sini",
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: const Color(0xFF2E7D32),
-                                fontWeight: FontWeight.bold,
-                              ),
+                          onTap: () => Navigator.pushNamed(context, '/register'),
+                          child: Text(
+                            "Daftar di sini",
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: const Color(0xFF2E7D32),
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
@@ -172,6 +163,7 @@ class LoginScreen extends StatelessWidget {
   }
 
   Widget _buildTextField({
+    required TextEditingController controller,
     required String label,
     required String hint,
     required IconData icon,
@@ -180,34 +172,15 @@ class LoginScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-          ),
-        ),
+        Text(label, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         TextField(
+          controller: controller,
           obscureText: isPassword,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
             prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
-            contentPadding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF2E7D32)),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
       ],

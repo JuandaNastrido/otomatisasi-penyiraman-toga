@@ -16,7 +16,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final ApiService _apiService = ApiService();
   bool isLoading = true;
 
-  String userEmail = "decalyps@gmail.com";
   String statusKoneksi = "Online";
   String tanaman = "Jahe Merah";
   String humidityGroup = "Sedang";
@@ -55,7 +54,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         humidityRangeText = "30% - 50%";
       }
 
-      final Map<String, dynamic> sensorResponse = await _apiService.getLatestSensorData(userEmail);
+      // Pemanggilan API tanpa email (menggunakan token)
+      final Map<String, dynamic> sensorResponse = await _apiService.getLatestSensorData();
       final Map<String, dynamic> weatherData = await _apiService.getWeatherData();
 
       if (!mounted) return;
@@ -111,7 +111,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 16),
                           
-                          // UI Baru: Menampilkan semua perangkat
                           if (devices.isEmpty)
                             Center(
                               child: Padding(
@@ -335,11 +334,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildWateringSystemCard() {
-    // Mengambil status pompa dari pot pertama perangkat pertama sebagai representasi sistem
-    String action = devices.isNotEmpty && devices[0]['pots'].isNotEmpty 
-        ? devices[0]['pots'][0]['action'] 
-        : "OFF";
-    bool isPumping = action.toLowerCase().contains("on");
+    bool isAnyPumping = false;
+    for (var device in devices) {
+      for (var pot in (device['pots'] as List? ?? [])) {
+        if ((pot['action'] ?? "").toString().toLowerCase().contains("on")) {
+          isAnyPumping = true;
+          break;
+        }
+      }
+    }
 
     return Container(
       width: double.infinity,
@@ -358,7 +361,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text("Sistem Penyiraman Otomatis", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15)),
                   Row(children: [
                     Text("STATUS: ", style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey)), 
-                    Text(isPumping ? "MENYIRAM" : "READY", style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: isPumping ? Colors.blue : Colors.green)), 
+                    Text(isAnyPumping ? "MENYIRAM" : "READY", style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: isAnyPumping ? Colors.blue : Colors.green)),
                     const SizedBox(width: 4), 
                     const Icon(Icons.check_circle, color: Colors.green, size: 12)
                   ]),
