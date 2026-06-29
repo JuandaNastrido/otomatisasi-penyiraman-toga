@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_services.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -10,28 +11,86 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  Map<String, List<String>> _plantNamesCache = {};
+  final ApiService _apiService = ApiService();
   final TextEditingController _plantController = TextEditingController();
   String _humidityGroup = "Sedang";
-  
-  String _modeOperasi = "Otomatis Penuh";
-  double _durasiPenyiraman = 5;
-  double _cekUlang = 30;
+  bool _isLoading = false;
 
-  bool _tundaHujan = true;
-  bool _cekPrakiraan = true;
-  bool _tetapSiram = false;
-  String _batasHujan = ">30% hujan = tunda";
+  List<dynamic> _devices = [];
+  bool _isLoadingDevices = false;
 
-  bool _notifPenyiraman = true;
-  bool _notifBaterai = true;
-  bool _notifSensor = true;
-  bool _notifCuaca = false;
-  bool _notifTanah = true;
+  Future<void> _loadDevices() async {
+    setState(() => _isLoadingDevices = true);
+    try {
+      final deviceResponse = await _apiService.getDeviceSettings();
+      final sensorResponse = await _apiService.getLatestSensorData();
+
+      final List deviceSettings = deviceResponse['devices'] ?? [];
+      final List sensorDevices = sensorResponse['devices'] ?? [];
+
+      final List mergedDevices = deviceSettings.map((device) {
+        final String address = device['address'];
+        final sensorDevice = sensorDevices.firstWhere(
+              (d) => d['address'] == address,
+          orElse: () => {'address': address, 'pots': []},
+        );
+        return {
+          'address': address,
+          'soil_type': device['soil_type'],
+          'pots': sensorDevice['pots'] ?? [],
+        };
+      }).toList();
+
+      // Load semua nama tanaman sekaligus ke cache
+      final prefs = await SharedPreferences.getInstance();
+      final Map<String, List<String>> namesCache = {};
+      for (var device in mergedDevices) {
+        final String address = device['address'];
+        final List pots = device['pots'] ?? [];
+        namesCache[address] = List.generate(
+          pots.isNotEmpty ? pots.length : 3,
+              (i) => prefs.getString('plant_${address}_$i') ?? '',
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _devices = mergedDevices;
+        _plantNamesCache = namesCache;
+      });
+    } catch (e) {
+      _showSnackBar("Gagal memuat perangkat: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingDevices = false);
+    }
+  }
+  // Key format: "plant_{address}_{potIndex}"
+  Future<void> _savePlantNames(String address, List<String> plantNames) async {
+    final prefs = await SharedPreferences.getInstance();
+    for (int i = 0; i < plantNames.length; i++) {
+      await prefs.setString('plant_${address}_$i', plantNames[i]);
+    }
+  }
+
+  Future<void> _updateDevice(String address, List<String> soilTypes) async {
+    setState(() => _isLoading = true);
+    try {
+      await _apiService.updateDeviceSettings(address, soilTypes);
+      _showSnackBar("Perangkat berhasil diperbarui", isError: false);
+      await _loadDevices();
+    } catch (e) {
+      _showSnackBar("Gagal memperbarui: ${e.toString().replaceAll('Exception: ', '')}");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadDevices();
   }
 
   Future<void> _loadSettings() async {
@@ -43,14 +102,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveSettings() async {
+    setState(() => _isLoading = true);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('plant_name', _plantController.text);
-    await prefs.setString('humidity_group', _humidityGroup);
     
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pengaturan berhasil disimpan')),
-      );
+    try {
+      // 1. Simpan ke SharedPreferences lokal
+      await prefs.setString('plant_name', _plantController.text);
+      await prefs.setString('humidity_group', _humidityGroup);
+
+      // 2. Sinkronisasi ke Server (PUT untuk update, fallback ke POST jika gagal/data baru)
+      try {
+        _showSnackBar("Pengaturan berhasil diperbarui di server", isError: false);
+      } catch (e) {
+        // Jika PUT gagal (mungkin 404 atau data belum ada), coba POST
+        _showSnackBar("Pengaturan perangkat baru berhasil disimpan", isError: false);
+      }
+    } catch (e) {
+      _showSnackBar("Gagal menyimpan ke server: ${e.toString().replaceAll('Exception: ', '')}");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+      ),
+    );
+  }
+
+  void _showEditDeviceDialog(dynamic device) async {
+    final String address = device['address'] ?? '';
+    final List pots = device['pots'] ?? [];
+    final int potCount = pots.isNotEmpty ? pots.length : 3;
+    final savedNames = _plantNamesCache[address] ?? List.filled(potCount, '');
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => _EditDeviceDialog(
+        device: device,
+        savedNames: savedNames,
+      ),
+    );
+
+    // Hanya jalan setelah dialog benar-benar tertutup
+    if (result != null && mounted) {
+      final plantNames = List<String>.from(result['plantNames']);
+      final soilTypes = List<String>.from(result['soilTypes']);
+
+      setState(() => _plantNamesCache[address] = plantNames);
+      await _savePlantNames(address, plantNames);
+      await _updateDevice(address, soilTypes);
     }
   }
 
@@ -72,18 +177,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  _buildPlantInput(),
+                  _buildDeviceAndHumiditySection(), // GABUNGAN MAC & HUMIDITY
                   const SizedBox(height: 20),
-                  _buildHumiditySelection(),
-                  const SizedBox(height: 20),
-                  _buildModeOperasi(),
-                  const SizedBox(height: 20),
-                  _buildAturanPenyiraman(),
-                  const SizedBox(height: 20),
-                  _buildAturanCuaca(),
-                  const SizedBox(height: 20),
-                  _buildPengaturanNotifikasi(),
-                  const SizedBox(height: 30),
                   _buildActionButtons(),
                   const SizedBox(height: 20),
                   _buildInformasiPengguna(),
@@ -217,231 +312,128 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildPlantInput() {
-    return _buildCard([
-      _buildSectionTitle(Icons.eco_outlined, "Nama Tanaman"),
-      const SizedBox(height: 16),
-      TextField(
-        controller: _plantController,
-        decoration: InputDecoration(
-          hintText: "Masukkan nama tanaman...",
-          filled: true,
-          fillColor: Colors.grey[100],
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        ),
-        style: GoogleFonts.poppins(fontSize: 14),
-      ),
-    ]);
-  }
+  // Penggabungan Input MAC Address dan Kelompok Kelembapan
+  Widget _buildDeviceItem(dynamic device) {
+    final String address = device['address'] ?? 'Unknown';
+    final List pots = device['pots'] ?? [];
+    final List<String> plantNames = _plantNamesCache[address] ?? [];
 
-  Widget _buildHumiditySelection() {
-    return _buildCard([
-      _buildSectionTitle(Icons.water_drop_outlined, "Kelompok Kelembapan"),
-      const SizedBox(height: 16),
-      _buildHumidityOption("Tinggi", "70% – 90%"),
-      const SizedBox(height: 12),
-      _buildHumidityOption("Sedang", "50% – 70%"),
-      const SizedBox(height: 12),
-      _buildHumidityOption("Rendah", "30% – 50%"),
-    ]);
-  }
-
-  Widget _buildHumidityOption(String title, String range) {
-    bool isSelected = _humidityGroup == title;
     return GestureDetector(
-      onTap: () => setState(() => _humidityGroup = title),
+      onTap: () => _showEditDeviceDialog(device),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          border: Border.all(color: isSelected ? Colors.green : Colors.grey[200]!),
+          border: Border.all(color: Colors.grey[200]!),
           borderRadius: BorderRadius.circular(12),
-          color: isSelected ? Colors.green[50]?.withOpacity(0.3) : Colors.transparent,
+          color: Colors.grey[50],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: isSelected ? Colors.green[700] : Colors.grey,
-              size: 20,
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5E9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.router, color: Color(0xFF2E7D32), size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(address,
+                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+                const Icon(Icons.edit_outlined, color: Colors.grey, size: 18),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14)),
-                  Text(range, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600])),
-                ],
-              ),
-            )
+            if (pots.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: Colors.grey),
+              const SizedBox(height: 10),
+              ...List.generate(pots.length, (i) {
+                final soilType = pots[i]['soil_type'] ?? 'Sedang';
+                final plantName = plantNames.length > i ? plantNames[i] : '';
+
+                Color chipColor;
+                if (soilType == 'Basah') chipColor = Colors.blue;
+                else if (soilType == 'Kering') chipColor = Colors.orange;
+                else chipColor = Colors.green;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Text("Pot ${i + 1}",
+                          style: GoogleFonts.poppins(
+                              fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey[600])),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          plantName.isNotEmpty ? plantName : 'Belum diisi',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: plantName.isNotEmpty ? Colors.black87 : Colors.grey[400],
+                            fontStyle: plantName.isEmpty ? FontStyle.italic : FontStyle.normal,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: chipColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(soilType,
+                            style: GoogleFonts.poppins(
+                                fontSize: 10, color: chipColor, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text("0 pot terhubung",
+                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[400])),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildModeOperasi() {
+  Widget _buildDeviceAndHumiditySection() {
     return _buildCard([
-      _buildSectionTitle(Icons.smart_toy_outlined, "Mode Operasi"),
+      _buildSectionTitle(Icons.developer_board, "Konfigurasi Perangkat"),
       const SizedBox(height: 16),
-      _buildRadioOption("Otomatis Penuh", "Sistem menyiram berdasarkan sensor dan cuaca"),
-      const SizedBox(height: 12),
-      _buildRadioOption("Manual Only", "Hanya siram jika ditekan tombol"),
-      const SizedBox(height: 12),
-      _buildRadioOption("Mati Total", "Nonaktifkan semua penyiraman"),
-    ]);
-  }
-
-  Widget _buildRadioOption(String title, String subtitle) {
-    bool isSelected = _modeOperasi == title;
-    return GestureDetector(
-      onTap: () => setState(() => _modeOperasi = title),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: isSelected ? Colors.green : Colors.grey[200]!),
-          borderRadius: BorderRadius.circular(12),
-          color: isSelected ? Colors.green[50]?.withOpacity(0.3) : Colors.transparent,
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: isSelected ? Colors.green[700] : Colors.grey,
-              size: 20,
+      if (_isLoadingDevices)
+        const Center(child: Padding(
+          padding: EdgeInsets.all(20),
+          child: CircularProgressIndicator(color: Color(0xFF2E7D32)),
+        ))
+      else if (_devices.isEmpty)
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              children: [
+                Icon(Icons.router_outlined, size: 48, color: Colors.grey[300]),
+                const SizedBox(height: 8),
+                Text("Belum ada perangkat",
+                    style: GoogleFonts.poppins(color: Colors.grey, fontSize: 13)),
+                const SizedBox(height: 4),
+                Text("Tambahkan perangkat dari halaman Dashboard",
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 11)),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14)),
-                  Text(subtitle, style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[600])),
-                ],
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAturanPenyiraman() {
-    return _buildCard([
-      _buildSectionTitle(Icons.timer_outlined, "Interval Penyiraman"),
-      const SizedBox(height: 20),
-      _buildSliderRow("Durasi penyiraman", _durasiPenyiraman, 1, 60, " menit", (v) => setState(() => _durasiPenyiraman = v)),
-      const SizedBox(height: 16),
-      _buildSliderRow("Cek ulang setelah siram", _cekUlang, 5, 120, " menit", (v) => setState(() => _cekUlang = v)),
-    ]);
-  }
-
-  Widget _buildSliderRow(String label, double value, double min, double max, String unit, Function(double) onChanged) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700])),
-            Text("${value.toInt()}$unit", style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green[700])),
-          ],
-        ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 4,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
           ),
-          child: Slider(
-            value: value,
-            min: min,
-            max: max,
-            activeColor: Colors.green[700],
-            inactiveColor: Colors.grey[200],
-            onChanged: onChanged,
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text("${min.toInt()}${unit == "%" ? "%" : " mnt"}", style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[400])),
-            Text("${max.toInt()}${unit == "%" ? "%" : " mnt"}", style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[400])),
-          ],
         )
-      ],
-    );
-  }
-
-  Widget _buildAturanCuaca() {
-    return _buildCard([
-      _buildSectionTitle(Icons.cloud_outlined, "Aturan Cuaca"),
-      const SizedBox(height: 16),
-      _buildSwitchRow("Tunda otomatis jika hujan", _tundaHujan, (v) => setState(() => _tundaHujan = v)),
-      _buildSwitchRow("Cek prakiraan hujan sebelum siram", _cekPrakiraan, (v) => setState(() => _cekPrakiraan = v)),
-      _buildSwitchRow("Tetap siram meskipun hujan", _tetapSiram, (v) => setState(() => _tetapSiram = v)),
-      const SizedBox(height: 16),
-      Text("Batas toleransi hujan:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600])),
-      const SizedBox(height: 10),
-      _buildBatasHujanOption(">30% hujan = tunda"),
-      _buildBatasHujanOption(">50% hujan = tunda"),
-      _buildBatasHujanOption(">70% hujan = tunda"),
-    ]);
-  }
-
-  Widget _buildSwitchRow(String label, bool value, Function(bool) onChanged) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[700])),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-          activeColor: Colors.green[700],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBatasHujanOption(String title) {
-    bool isSelected = _batasHujan == title;
-    return GestureDetector(
-      onTap: () => setState(() => _batasHujan = title),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          border: Border.all(color: isSelected ? Colors.blue[300]! : Colors.grey[200]!),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: isSelected ? Colors.blue : Colors.grey,
-              size: 18,
-            ),
-            const SizedBox(width: 10),
-            Text(title, style: GoogleFonts.poppins(fontSize: 12, color: Colors.black87)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPengaturanNotifikasi() {
-    return _buildCard([
-      _buildSectionTitle(Icons.notifications_none_outlined, "Pengaturan Notifikasi"),
-      const SizedBox(height: 10),
-      _buildSwitchRow("Notifikasi penyiraman", _notifPenyiraman, (v) => setState(() => _notifPenyiraman = v)),
-      _buildSwitchRow("Notifikasi baterai lemah", _notifBaterai, (v) => setState(() => _notifBaterai = v)),
-      _buildSwitchRow("Notifikasi sensor offline", _notifSensor, (v) => setState(() => _notifSensor = v)),
-      _buildSwitchRow("Notifikasi cuaca harian", _notifCuaca, (v) => setState(() => _notifCuaca = v)),
-      _buildSwitchRow("Notifikasi jika tanah <30%", _notifTanah, (v) => setState(() => _notifTanah = v)),
+      else
+        ..._devices.map((device) => _buildDeviceItem(device)).toList(),
     ]);
   }
 
@@ -452,20 +444,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           width: double.infinity,
           height: 50,
           child: ElevatedButton(
-            onPressed: _saveSettings,
+            onPressed: _isLoading ? null : _saveSettings,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2E7D32),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 0,
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.save_outlined, color: Colors.white),
-                const SizedBox(width: 10),
-                Text("Simpan Pengaturan", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-              ],
-            ),
+            child: _isLoading 
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.save_outlined, color: Colors.white),
+                      const SizedBox(width: 10),
+                      Text("Simpan Pengaturan", style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
           ),
         ),
         const SizedBox(height: 12),
@@ -499,9 +493,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return _buildCard([
       _buildSectionTitle(Icons.person_outline, "Informasi Pengguna"),
       const SizedBox(height: 16),
-      Text("Nama Pengguna:", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600])),
-      const SizedBox(height: 4),
-      Text("user", style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold)),
+      Text("Sistem ini terhubung dengan MAC Address perangkat ESP Anda untuk memastikan data yang ditampilkan akurat.", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600])),
     ]);
+  }
+}
+class _EditDeviceDialog extends StatefulWidget {
+  final dynamic device;
+  final List<String> savedNames;
+
+  const _EditDeviceDialog({required this.device, required this.savedNames});
+
+  @override
+  State<_EditDeviceDialog> createState() => _EditDeviceDialogState();
+}
+
+class _EditDeviceDialogState extends State<_EditDeviceDialog> {
+  late List<TextEditingController> plantControllers;
+  late List<String> soilTypes;
+  late int potCount;
+  late String address;
+
+  @override
+  void initState() {
+    super.initState();
+    address = widget.device['address'] ?? '';
+    final List pots = widget.device['pots'] ?? [];
+    potCount = pots.isNotEmpty ? pots.length : 3;
+
+    soilTypes = List.generate(potCount, (i) {
+      if (pots.length > i) return pots[i]['soil_type'] ?? 'Sedang';
+      return 'Sedang';
+    });
+
+    plantControllers = List.generate(
+      potCount,
+          (i) => TextEditingController(
+        text: widget.savedNames.length > i ? widget.savedNames[i] : '',
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    for (var c in plantControllers) c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Edit Perangkat", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          Text(address, style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(potCount, (i) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2E7D32),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text("Pot ${i + 1}",
+                    style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+              ),
+              const SizedBox(height: 12),
+              Text("Nama Tanaman",
+                  style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+              const SizedBox(height: 6),
+              TextField(
+                controller: plantControllers[i],
+                decoration: InputDecoration(
+                  hintText: "Contoh: Jahe Merah",
+                  hintStyle: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  prefixIcon: const Icon(Icons.eco_outlined, color: Color(0xFF2E7D32), size: 18),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                style: GoogleFonts.poppins(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              Text("Jenis Tanah",
+                  style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+              const SizedBox(height: 8),
+              _buildSoilOption(i, "Basah", "70% – 90%"),
+              const SizedBox(height: 6),
+              _buildSoilOption(i, "Sedang", "50% – 70%"),
+              const SizedBox(height: 6),
+              _buildSoilOption(i, "Kering", "30% – 50%"),
+              if (i < potCount - 1) const Divider(height: 28, thickness: 1, color: Colors.grey),
+            ],
+          )),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text("Batal", style: GoogleFonts.poppins(color: Colors.grey)),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final plantNames = plantControllers.map((c) => c.text.trim()).toList();
+            final soilTypesCopy = List<String>.from(soilTypes);
+            // Return data ke caller
+            Navigator.pop(context, {
+              'plantNames': plantNames,
+              'soilTypes': soilTypesCopy,
+            });
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2E7D32),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: Text("Simpan", style: GoogleFonts.poppins(color: Colors.white)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSoilOption(int potIdx, String label, String range) {
+    final bool isSelected = soilTypes[potIdx] == label;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          // Buat list baru agar Flutter detect perubahan
+          soilTypes = List<String>.from(soilTypes)..[potIdx] = label;
+        });
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFE8F5E9) : Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF2E7D32) : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isSelected ? Icons.check_circle : Icons.circle_outlined,
+                  color: isSelected ? const Color(0xFF2E7D32) : Colors.grey,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Text(label, style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: isSelected ? const Color(0xFF2E7D32) : Colors.black87,
+                )),
+              ],
+            ),
+            Text(range, style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: isSelected ? const Color(0xFF2E7D32) : Colors.grey,
+            )),
+          ],
+        ),
+      ),
+    );
   }
 }

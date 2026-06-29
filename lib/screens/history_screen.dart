@@ -1,8 +1,7 @@
-// C:/Users/juand/StudioProjects/Toga/lib/screens/history_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_services.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -138,7 +137,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         const SizedBox(height: 8),
         if (history.isEmpty)
           Text("Tidak ada riwayat", style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey))
-        else
+        else ...[
+          _buildMoistureChart(history),
+          const SizedBox(height: 12),
           ...history.map((item) => Container(
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -152,7 +153,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("${item['moisturePercent']}% - ${item['soilCondition']}",
+                    Text("${double.tryParse(item['moisturePercent'].toString())?.toInt() ?? 0}% - ${item['soilCondition']}",
                         style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600)),
                     Text(item['timestampSensor'] ?? "-",
                         style: GoogleFonts.poppins(fontSize: 9, color: Colors.grey)),
@@ -164,7 +165,112 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ],
             ),
           )).toList(),
+        ],
       ],
+    );
+  }
+
+  Widget _buildMoistureChart(List<dynamic> history) {
+    // Balik urutan agar grafik dari kiri = terlama, kanan = terbaru
+    final reversed = history.reversed.toList();
+
+    final spots = List.generate(reversed.length, (i) {
+      // Tambah parsing yang handle String dan num
+      final raw = reversed[i]['moisturePercent'];
+      final moisture = double.tryParse(raw.toString()) ?? 0.0;
+      return FlSpot(i.toDouble(), moisture);
+    });
+
+    return Container(
+      height: 140,
+      padding: const EdgeInsets.fromLTRB(8, 12, 16, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: 100,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 25,
+            getDrawingHorizontalLine: (_) => FlLine(
+              color: Colors.green.withOpacity(0.15),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 25,
+                reservedSize: 32,
+                getTitlesWidget: (value, _) => Text(
+                  "${value.toInt()}%",
+                  style: GoogleFonts.poppins(fontSize: 9, color: Colors.grey),
+                ),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 1,
+                getTitlesWidget: (value, _) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= reversed.length) return const SizedBox();
+                  final timestamp = reversed[i]['timestampSensor'] ?? '';
+                  // Ambil jam:menit saja dari timestamp
+                  String label = '';
+                  try {
+                    final dt = DateTime.parse(timestamp);
+                    label = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                  } catch (_) {
+                    label = timestamp.length > 5 ? timestamp.substring(timestamp.length - 5) : timestamp;
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(label, style: GoogleFonts.poppins(fontSize: 8, color: Colors.grey)),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+                "${s.y.toInt()}%",
+                GoogleFonts.poppins(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              )).toList(),
+            ),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: const Color(0xFF2E7D32),
+              barWidth: 2.5,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
+                  radius: 3,
+                  color: const Color(0xFF2E7D32),
+                  strokeWidth: 1.5,
+                  strokeColor: Colors.white,
+                ),
+              ),
+              belowBarData: BarAreaData(
+                show: true,
+                color: const Color(0xFF2E7D32).withOpacity(0.1),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
