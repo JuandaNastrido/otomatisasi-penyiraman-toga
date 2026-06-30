@@ -114,25 +114,26 @@ Dokumentasi lengkap proyek **TOGA - Smart Watering System** telah tersedia. Sila
 ## 📋 Ringkasan Project
 
 ### Deskripsi Singkat
-**TOGA** adalah aplikasi mobile Flutter untuk sistem pengairan otomatis tanaman yang mengintegrasikan data sensor real-time, cuaca, dan manajemen pengguna.
+**TOGA** adalah aplikasi mobile Flutter untuk sistem pengairan otomatis tanaman yang mengintegrasikan autentikasi pengguna, data sensor real-time, cuaca berbasis lokasi, konfigurasi perangkat, dan fitur siram manual.
 
 ### Tech Stack
 ```
 Frontend:        Flutter (Dart)
 UI Framework:    Material Design 3
-Backend API:     REST (172.20.12.1:3000)
-Weather API:     OpenWeatherMap
+Backend API:     REST (http://192.168.1.15:8080)
+Weather API:     OpenWeatherMap via GPS
 Local Storage:   SharedPreferences
+Charts:          fl_chart
 Native Support:  Android + iOS
 ```
 
 ### Key Features
 ✅ User Authentication (Login, Register, Forgot Password)
-✅ Real-time Sensor Data Monitoring
+✅ Latest & History Sensor Data Monitoring
 ✅ Weather Integration & Rain Prediction
-✅ System Control Panel
-✅ Usage History & Analytics
-✅ Settings & User Management
+✅ Manual Watering Control per Device/Pot
+✅ Device Settings & Plant Naming per Pot
+✅ Usage History & Analytics with Charts
 
 ### Struktur Project
 ```
@@ -230,7 +231,7 @@ flutter run
 | Build gagal | `flutter clean && flutter pub get` |
 | API connection error | Check `.env` file dan network |
 | Widget tidak rebuild | Use `setState()` atau state management |
-| Port 3000 tidak accessible | Verify backend running di 172.20.12.1:3000 |
+| Backend tidak reachable | Pastikan server backend aktif di 192.168.1.15:8080 |
 
 Untuk troubleshooting lengkap → DOKUMENTASI_LENGKAP.md (Bagian: Troubleshooting)
 

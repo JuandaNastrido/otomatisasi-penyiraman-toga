@@ -27,16 +27,16 @@
 │         SERVICE LAYER               │
 │  (Business Logic & API Calls)       │
 │  - ApiService                       │
-│  - AuthService (future)             │
-│  - NotificationService (future)     │
+│  - Auth, sensor, settings flows     │
+│  - Manual watering command logic    │
 └──────────────┬──────────────────────┘
                │
 ┌──────────────▼──────────────────────┐
 │         DATA LAYER                  │
 │  (External APIs & Local Storage)    │
-│  - Backend API (172.20.12.1:3000)   │
+│  - Backend API (192.168.1.15:8080)  │
 │  - OpenWeatherMap API               │
-│  - SharedPreferences                │
+│  - SharedPreferences + GPS         │
 └─────────────────────────────────────┘
 ```
 
@@ -203,15 +203,18 @@ SettingsScreen          # App settings & profile
 HistoryScreen           # Usage history & stats
 
 // Services
-ApiService              # API communication
-getSensorData()         # Fetch sensor readings
-getWeatherData()        # Fetch weather data
-_getFallbackWeatherData() # Fallback if API fails
+ApiService              # API communication and business logic
+login()/register()     # Auth endpoints
+getLatestSensorData()  # Dashboard latest reading
+getSensorHistory()     # History data per pot
+getDeviceSettings()/updateDeviceSettings() # Device config
+sendManualWatering()   # Manual irrigation command
+getWeatherData()       # GPS-based weather + rain forecast
 
 // External APIs
-Backend: 172.20.12.1:3000  # Local sensor API
+Backend: 192.168.1.15:8080  # Auth + sensor + device settings API
 OpenWeatherMap API      # Weather data provider
-SharedPreferences       # Local data storage
+SharedPreferences       # Local token, settings, and plant names
 ```
 
 ### Important Constants

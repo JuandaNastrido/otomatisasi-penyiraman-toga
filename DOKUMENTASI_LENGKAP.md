@@ -22,10 +22,11 @@
 ### Deskripsi
 Toga adalah aplikasi mobile Flutter untuk sistem pengairan otomatis tanaman. Aplikasi ini mengintegrasikan:
 - Sistem autentikasi pengguna (Login, Register, Forgot Password)
-- Data sensor real-time dari backend lokal
-- Data cuaca dari OpenWeatherMap API
-- Riwayat penggunaan sistem
-- Pengaturan sistem
+- Data sensor real-time dari backend
+- Data cuaca dari OpenWeatherMap API berbasis lokasi GPS
+- Riwayat penggunaan sistem per perangkat dan pot
+- Pengaturan perangkat, jenis tanah, dan nama tanaman per pot
+- Fitur siram manual dengan durasi dan target pot
 
 ### Target Platform
 - 🤖 **Android** (API Level: minimum sesuai Flutter support)
@@ -192,24 +193,25 @@ flutter build ios
 - **Session Management**: Menggunakan SharedPreferences
 
 ### 2. **Dashboard/Beranda** 📊
-- Menampilkan data sensor real-time dari backend lokal
-- Integrasi cuaca real-time dari OpenWeatherMap
-- Monitoring kondisi tanaman
-- Quick actions untuk kontrol sistem
+- Menampilkan data sensor real-time dari backend
+- Integrasi cuaca real-time dari OpenWeatherMap berbasis GPS
+- Monitoring kondisi tanaman dan status perangkat
+- Quick action untuk siram manual per perangkat/pot
 
 ### 3. **Pengaturan** ⚙️
-- Konfigurasi sistem watering
-- Pengaturan notifikasi
-- Manajemen profil pengguna
-- Tentang aplikasi
+- Konfigurasi perangkat dan jenis tanah per pot
+- Pengelolaan nama tanaman per pot
+- Pengaturan kelompok kelembapan
+- Penyimpanan preferensi lokal via SharedPreferences
 
 ### 4. **Riwayat** 📜
-- Log penggunaan sistem
-- Statistik pengairan
-- Data historis sensor
+- Log aktivitas perangkat dan pot
+- Grafik kelembapan per pot
+- Data historis sensor terbaru
+- Refresh data manual
 
 ### 5. **API Integration** 🔌
-- **Backend Lokal**: Sensor data (IP: 172.20.12.1:3000)
+- **Backend**: Auth + sensor + device settings (IP: 192.168.1.15:8080)
 - **OpenWeatherMap API**: Data cuaca & prediksi hujan
 - **Error Handling**: Fallback data jika API tidak tersedia
 
