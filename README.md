@@ -6,10 +6,11 @@ A Flutter mobile application for automated plant watering system with real-time 
 
 **TOGA** is an intelligent watering system that combines:
 - ✅ User authentication (Login, Register, Password Recovery)
-- ✅ Real-time sensor data monitoring from IoT backend
-- ✅ Weather data integration with rain prediction
-- ✅ System control & automation
-- ✅ Usage history & analytics
+- ✅ Real-time sensor monitoring from the backend with latest and history endpoints
+- ✅ Weather data integration based on GPS location and rain prediction
+- ✅ Manual watering control per device and pot
+- ✅ Device settings management and plant naming per pot
+- ✅ Usage history & analytics with charts
 - ✅ Cross-platform support (Android & iOS)
 
 ## 🚀 Quick Start
@@ -56,10 +57,12 @@ Complete documentation is available:
 ```
 Frontend:         Flutter (Dart)
 UI Framework:     Material Design 3
-Backend API:      REST API (172.20.12.1:3000)
-Weather API:      OpenWeatherMap
+Backend API:      REST API (http://192.168.1.15:8080)
+Weather API:      OpenWeatherMap via GPS location
 Local Storage:    SharedPreferences
 Native Support:   Android + iOS
+Charts:           fl_chart
+Location Services: geolocator + location
 Min SDK:          Flutter 3.11.4+
 ```
 
@@ -91,43 +94,51 @@ toga/
 
 ### 🔐 Authentication
 - User login & registration
-- Password recovery
-- Session management
-- Secure credential storage
+- Password recovery via backend check/reset flow
+- Session management with token storage
+- Secure credential storage in SharedPreferences
 
 ### 📊 Dashboard
-- Real-time sensor data display
-- Current weather & rain prediction
-- System status indicators
-- Quick action buttons
+- Latest sensor data display from backend
+- Current weather & rain prediction from OpenWeatherMap
+- Device and pot status overview
+- Manual watering action with duration and pot selection
 
 ### ⚙️ Settings
-- System configuration
-- Notification preferences
-- User profile management
-- App information
+- Device configuration and soil-type setup per pot
+- Plant name management per pot
+- Humidity group configuration
+- Local persistence for user preferences
 
 ### 📜 History
-- Usage timeline
-- Water consumption statistics
-- Historical data analysis
-- Date filtering
+- Sensor history per device and pot
+- Moisture trend chart with fl_chart
+- Recent activity timeline
+- Refreshable history view
 
 ## 🔌 API Integration
 
-### Backend API (Local)
+### Backend API
 ```
-Base URL: http://172.20.12.1:3000
-Endpoint: GET /api/data
-Response: Sensor readings (temperature, humidity, soil moisture, etc.)
+Base URL: http://192.168.1.15:8080
+Endpoints:
+  - POST /auth/register
+  - POST /auth/login
+  - GET /auth/exists?email=...
+  - PUT /auth/reset-password
+  - GET /api/sensor-data/latest
+  - GET /api/sensor-data/history?limit=...
+  - GET/POST/PUT /api/sensor-data/device-settings
+  - POST /api/sensor-data/command
 ```
 
 ### Weather API
 ```
 Provider: OpenWeatherMap
-Endpoints: 
+Endpoints:
   - Current weather: /weather
   - Forecast: /forecast
+Location: based on GPS coordinates from device
 Language: Indonesian (id)
 Units: Metric (°C)
 ```
@@ -210,6 +221,9 @@ See [DOKUMENTASI_LENGKAP.md](DOKUMENTASI_LENGKAP.md#-troubleshooting) for more t
 | shared_preferences | ^2.2.2 | Local storage |
 | flutter_dotenv | ^6.0.1 | Environment config |
 | intl | ^0.19.0 | Internationalization |
+| geolocator | ^13.0.0 | GPS location access |
+| location | ^7.0.0 | Location services |
+| fl_chart | ^0.69.0 | Sensor history charts |
 
 ## 📊 Project Stats
 
@@ -246,6 +260,13 @@ Status: Active Development ✅
 5. Submit pull request
 
 ## 📝 Version History
+
+- **v1.1.0** (2026-06-30): Feature expansion update
+  - Authentication flow with backend endpoints
+  - Device settings management and plant naming per pot
+  - Manual watering command with duration and pot selection
+  - History screen with moisture trend chart
+  - Weather data based on device GPS location
 
 - **v1.0.0** (2024-06-15): Initial release
   - Authentication system

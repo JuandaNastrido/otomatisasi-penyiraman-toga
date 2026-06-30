@@ -159,32 +159,21 @@ flutter doctor
 
 ```
 lib/
-├── main.dart                    # Entry point (20-50 lines)
+├── main.dart                    # Entry point & route setup
 ├── screens/                     # UI Pages
 │   ├── splash_screen.dart
 │   ├── login_screen.dart
 │   ├── register_screen.dart
-│   └── ...
+│   ├── forgot_password_screen.dart
+│   ├── main_screen.dart
+│   ├── dasboard_screen.dart
+│   ├── settings_screen.dart
+│   └── history_screen.dart
 ├── services/                    # Business Logic & API
-│   ├── api_services.dart
-│   ├── auth_service.dart       # Future addition
-│   └── database_service.dart   # Future addition
-├── models/                      # Data Models
-│   ├── user_model.dart
-│   ├── sensor_data_model.dart
-│   └── ...
-├── widgets/                     # Reusable Widgets
-│   ├── custom_button.dart
-│   ├── custom_input_field.dart
-│   └── ...
-├── utils/                       # Utilities & Helpers
-│   ├── constants.dart
-│   ├── validators.dart
-│   └── formatters.dart
-└── config/                      # Configuration
-    ├── theme.dart
-    ├── routes.dart
-    └── ...
+│   └── api_services.dart        # Auth, sensor, settings, manual watering
+├── models/                      # Data Models (can be added as feature grows)
+├── widgets/                     # Reusable Widgets (can be added as feature grows)
+└── utils/                       # Utilities & Helpers (can be added as feature grows)
 ```
 
 ### Naming Conventions

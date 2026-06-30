@@ -9,96 +9,101 @@
 
 ---
 
-## 🏢 Backend Lokal (Sensor Data)
+## 🔐 Authentication & Backend API
 
 ### Configuration
 ```dart
-Base URL: http://172.20.12.1:3000
+Base URL: http://192.168.1.15:8080
 Protocol: HTTP/REST
 Content-Type: application/json
+Authorization: Bearer <token>
 ```
 
-### Endpoint: GET /api/data
+### 1) Register
+**Method**: POST
+**URL**: `http://192.168.1.15:8080/auth/register`
 
-**Purpose**: Mengambil data sensor real-time dari sistem IoT
-
-**URL**: `GET http://172.20.12.1:3000/api/data`
-
-**Method**: GET
-
-**Headers**:
-```
-Content-Type: application/json
-```
-
-**Query Parameters**: None
-
-**Request Body**: Empty
-
-**Success Response (Status 200)**:
-```json
-[
-  {
-    "id": 1,
-    "sensorName": "Garden Sensor 1",
-    "temperature": 28.5,
-    "humidity": 65,
-    "soilMoisture": 45,
-    "lightLevel": 800,
-    "pumpStatus": true,
-    "waterFlowRate": 12.5,
-    "waterLevel": 80,
-    "timestamp": "2024-06-15T10:30:00Z",
-    "location": "Taman Belakang"
-  },
-  {
-    "id": 2,
-    "sensorName": "Garden Sensor 2",
-    "temperature": 27.8,
-    "humidity": 62,
-    "soilMoisture": 50,
-    "lightLevel": 750,
-    "pumpStatus": false,
-    "waterFlowRate": 0,
-    "waterLevel": 95,
-    "timestamp": "2024-06-15T10:30:00Z",
-    "location": "Taman Depan"
-  }
-]
-```
-
-**Error Response (Status != 200)**:
+Body:
 ```json
 {
-  "error": "Sensor data unavailable",
-  "code": 500,
-  "message": "Database connection failed"
+  "email": "user@example.com",
+  "password": "password123"
 }
 ```
 
-**Dart Implementation**:
-```dart
-Future<List<dynamic>> getSensorData() async {
-  try {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/data'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ).timeout(
-      const Duration(seconds: 10),
-      onTimeout: () => throw Exception('Request timeout'),
-    );
+### 2) Login
+**Method**: POST
+**URL**: `http://192.168.1.15:8080/auth/login`
 
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    } else {
-      throw Exception('Error: ${response.statusCode}');
-    }
-  } catch (e) {
-    print('Sensor API Error: $e');
-    rethrow;
-  }
+Body:
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+Success response:
+```json
+{
+  "token": "jwt-token",
+  "email": "user@example.com"
+}
+```
+
+### 3) Check Email Exists
+**Method**: GET
+**URL**: `http://192.168.1.15:8080/auth/exists?email=user@example.com`
+
+### 4) Reset Password
+**Method**: PUT
+**URL**: `http://192.168.1.15:8080/auth/reset-password`
+
+Body:
+```json
+{
+  "email": "user@example.com",
+  "password": "newpassword",
+  "passwordAgain": "newpassword"
+}
+```
+
+### 5) Latest Sensor Data
+**Method**: GET
+**URL**: `http://192.168.1.15:8080/api/sensor-data/latest`
+
+Headers:
+```http
+Authorization: Bearer <token>
+```
+
+### 6) Sensor History
+**Method**: GET
+**URL**: `http://192.168.1.15:8080/api/sensor-data/history?limit=5`
+
+### 7) Device Settings
+**Method**: GET / POST / PUT
+**URL**: `http://192.168.1.15:8080/api/sensor-data/device-settings`
+
+Body:
+```json
+{
+  "address": "ESP-01",
+  "soil_types": ["Sedang", "Kering", "Basah"]
+}
+```
+
+### 8) Manual Watering Command
+**Method**: POST
+**URL**: `http://192.168.1.15:8080/api/sensor-data/command`
+
+Body:
+```json
+{
+  "address": "ESP-01",
+  "command": "PUMP_ON_MANUAL",
+  "duration": 10,
+  "pot_index": 2
 }
 ```
 
@@ -106,12 +111,12 @@ Future<List<dynamic>> getSensorData() async {
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| Connection refused | Backend tidak running | Start backend server |
-| 172.20.12.1 unreachable | Network/IP salah | Check network config |
-| Empty response | Database issue | Check backend logs |
+| Connection refused | Backend tidak running | Jalankan backend di port 8080 |
+| 192.168.1.15 unreachable | Network/IP salah | Periksa konfigurasi lokal dan firewall |
+| Token invalid | Session expired | Lakukan login ulang |
 
 **Untuk Android Emulator**:
-Ganti IP dengan `10.0.2.2:3000`
+Gunakan IP host yang sesuai dengan mesin backend, biasanya `10.0.2.2` bila backend berjalan di mesin lokal.
 
 ---
 
